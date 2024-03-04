@@ -8,8 +8,8 @@
 
 class Node {
 	constructor(x, y, size, anchors = ["top", "left"]) {
-		this.x = x + size/2;
-		this.y = y + size/2;
+		this.x = x;
+		this.y = y;
 		this.direction = {x: 1, y: 1};
 		for (const anchor of anchors) {
 			switch (anchor) {
@@ -37,21 +37,26 @@ class Node {
 		}
 		this.size = size;
 		this.color = 0xabcdef;
-		this.connections = [];
+		this.texts = [];
+		this.drawProcs = [() => {
+			graphics.beginFill(this.color);
+			graphics.drawRect(
+				this.x - this.size/2 + this.size/2 * this.direction.x,
+				this.y - this.size/2 + this.size/2 * this.direction.y,
+				this.size, this.size);
+			graphics.endFill();
+		}];
 	}
 	draw() {
-		graphics.lineStyle(2, 0xffffff);
-		for (const node of this.connections) {
-			graphics.moveTo(this.x + this.size/2 * this.direction.x, this.y + this.size/2 * this.direction.y);
-			graphics.lineTo(node.x + node.size/2 * node.direction.x, node.y + node.size/2 * node.direction.y);
+		for (const proc of this.drawProcs) proc();
+	}
+	move(dx, dy) {
+		this.x += dx;
+		this.y += dy;
+		for (const text of this.texts) {
+			text.x += dx;
+			text.y += dy;
 		}
-		graphics.lineStyle(0, 0xffffff);
-		graphics.beginFill(this.color);
-		graphics.drawRect(
-			this.x - this.size/2 + this.size/2 * this.direction.x,
-			this.y - this.size/2 + this.size/2 * this.direction.y,
-			this.size, this.size);
-		graphics.endFill();
 	}
 	get hitbox() {
 		return new PIXI.Rectangle(
@@ -63,21 +68,21 @@ class Node {
 
 class Course extends Node {
 	constructor(x, y, size, name = "Course Name", desc = "Summary", id = "ID", prereqs = [], coreqs = []) {
-		super(x, y, size, ["left", "top"]);
-		this.texts = [];
+		super(x, y, size, ["center"]);
 		this.#addText(name, 20, 4, 4);
 		this.#addText(desc, 16, 4, 32);
 		this.id = id;
 		this.prereqs = prereqs;
 		this.coreqs = coreqs;
-	}
-	move(dx, dy) {
-		this.x += dx;
-		this.y += dy;
-		for (const text of this.texts) {
-			text.x += dx;
-			text.y += dy;
-		}
+		this.connections = [];
+		this.drawProcs.unshift(() => {
+			graphics.lineStyle(2, 0xffffff);
+			for (const node of this.connections) {
+				graphics.moveTo(this.x + this.size/2 * this.direction.x, this.y + this.size/2 * this.direction.y);
+				graphics.lineTo(node.x + node.size/2 * node.direction.x, node.y + node.size/2 * node.direction.y);
+			}
+			graphics.lineStyle(0, 0xffffff);
+		});
 	}
 	#addText(content, size, x, y) {
 		const text = new PIXI.Text(content, {fontSize: size, wordWrap: true, wordWrapWidth: this.size-8});
@@ -89,16 +94,14 @@ class Course extends Node {
 }
 
 class Button extends Node {
-	constructor(x, y, size, icon = "", onClick = () => 0, anchors = ["top", "left"]) {
+	constructor(x, y, size, icon = "", anchors = ["top", "left"], onPress = () => 0) {
 		super(x, y, size, anchors);
-		this.onClick = onClick;
+		this.onPress = () => console.log(anchors);
 		this.icon = new PIXI.Text(icon, {fontSize: size});
-		this.icon.x = this.x + (size-this.icon.width)/2;
-		this.icon.y = this.y + (size-this.icon.height)/2;
+		this.icon.x = this.x + (size*this.direction.x - this.icon.width)/2;
+		this.icon.y = this.y + (size*this.direction.y - this.icon.height)/2;
 		app.stage.addChild(this.icon);
-	}
-	move(dx, dy) {
-		this.onClick();
+		this.texts.push(this.icon);
 	}
 }
 
@@ -111,7 +114,7 @@ app.stage.hitArea = app.screen;
 app.stage.interactiveChildren = false;
 app.stage.on("pointerdown", onClick);
 app.stage.on("pointermove", onMove);
-app.stage.on("pointerup", () => drag = false);
+app.stage.on("pointerup", onLift);
 app.renderer.on("resize", onWindowResize)
 app.ticker.add(draw);
 window.setInterval(() => console.log("FPS:", app.ticker.FPS), 1000);
@@ -125,32 +128,63 @@ function draw(delta) {
 function onClick(event) {
 	for (const node of nodes) if (node.hitbox.contains(event.global.x, event.global.y)) {
 		drag = node;
+		if (drag instanceof Button) drag.drawProcs.push(() => {
+			graphics.beginFill(drag.color - 0x444444);
+			graphics.drawRect(
+				drag.x - drag.size/2 + drag.size/2 * drag.direction.x,
+				drag.y - drag.size/2 + drag.size/2 * drag.direction.y,
+				drag.size, drag.size);
+			graphics.endFill();
+		});
 		return;
 	}
 	drag = true;
 }
 
 function onMove(event) {
-	if (drag === true) for (const node of nodes) node.move(event.movement.x, event.movement.y);
-	else if (drag) drag.move(event.movement.x, event.movement.y);
+	if (drag === true) for (const node of courses) node.move(event.movement.x, event.movement.y);
+	else if (drag instanceof Course) drag.move(event.movement.x, event.movement.y);
+}
+
+function onLift() {
+	if (drag instanceof Button) {
+		drag.onPress();
+		drag.drawProcs.pop();
+	}
+	drag = false;
 }
 
 function onWindowResize(width, height) {
-	for (const node of nodes) node.move((width - oldWindowSize.x) / 2, (height - oldWindowSize.y) / 2);
+	for (const node of nodes) node.move(
+		(width - oldWindowSize.x) * (1 - node.direction.x) / 2,
+		(height - oldWindowSize.y) * (1 - node.direction.y) / 2);
 	oldWindowSize = {x: width, y: height};
 }
 
-const nodes = [
+const DEBUG = false;
+const courses = [
 	new Course(-100, -100, 150),
-	new Course(100, 50, 150),
-	new Button(50, 50, 50, "+", () => console.log("pressed top left"), ["top", "left"]),
-	new Button(50, 50, 50, "+", () => console.log("pressed top right"), ["top", "right"]),
-	new Button(50, 50, 50, "+", () => console.log("pressed bottom left"), ["bottom", "left"]),
-	new Button(50, 50, 50, "+", () => console.log("pressed bottom right"), ["bottom", "right"])];
+	new Course(100, 50, 150)];
+const buttons = [
+	new Button(50, 50, 50, "+", ["top", "left"]),
+	new Button(50, 50, 50, "+", ["top", "right"]),
+	new Button(50, 50, 50, "+", ["bottom", "left"]),
+	new Button(50, 50, 50, "+", ["bottom", "right"]),
+	new Button(0, 0, 50, "+", ["center"])];
+const nodes = courses.concat(buttons);
 nodes[0].connections.push(nodes[1]);
 var drag = false;
 var oldWindowSize = {x: app.screen.width, y: app.screen.height};
 document.body.appendChild(app.view);
+
+if (DEBUG) this.drawProcs.push(() => {
+	graphics.beginFill(this.color+100);
+	graphics.drawCircle(
+		this.x,
+		this.y,
+		this.size/8);
+	graphics.endFill();
+})
 
 '></body>
 </html>
