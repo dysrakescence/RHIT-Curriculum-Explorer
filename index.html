@@ -2,9 +2,10 @@
 <html>
 	<head>
 		<title>Curriculum Explorer</title>
-		<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.js"></script>
+		<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.x/dist/pixi.js"></script>
 	</head>
 	<body style="margin:0; overflow: hidden;" onload='
+(async () => {
 
 class Node {
 	constructor(x, y, size, anchors = ["top", "left"]) {
@@ -39,12 +40,11 @@ class Node {
 		this.color = 0xabcdef;
 		this.texts = [];
 		this.drawProcs = [() => {
-			graphics.beginFill(this.color);
-			graphics.drawRect(
+			graphics.rect(
 				this.x - this.size/2 + this.size/2 * this.direction.x,
 				this.y - this.size/2 + this.size/2 * this.direction.y,
 				this.size, this.size);
-			graphics.endFill();
+			graphics.fill(this.color);
 		}];
 	}
 	draw() {
@@ -76,16 +76,19 @@ class Course extends Node {
 		this.coreqs = coreqs;
 		this.connections = [];
 		this.drawProcs.unshift(() => {
-			graphics.lineStyle(2, 0xffffff);
 			for (const node of this.connections) {
 				graphics.moveTo(this.x + this.size/2 * this.direction.x, this.y + this.size/2 * this.direction.y);
 				graphics.lineTo(node.x + node.size/2 * node.direction.x, node.y + node.size/2 * node.direction.y);
+				graphics.stroke({width: 2, color: 0xffffff});
 			}
-			graphics.lineStyle(0, 0xffffff);
+			graphics.stroke({width: 0});
 		});
 	}
 	#addText(content, size, x, y) {
-		const text = new PIXI.Text(content, {fontSize: size, wordWrap: true, wordWrapWidth: this.size-8});
+		const text = new PIXI.Text({text: content, style: {
+			fontSize: size,
+			wordWrap: true,
+			wordWrapWidth: this.size-8}});
 		text.x = this.x - this.size/2 + this.size/2 * this.direction.x + x;
 		text.y = this.y - this.size/2 + this.size/2 * this.direction.y + y;
 		app.stage.addChild(text);
@@ -96,8 +99,9 @@ class Course extends Node {
 class Button extends Node {
 	constructor(x, y, size, icon = "", anchors = ["top", "left"], onPress = () => 0) {
 		super(x, y, size, anchors);
+		this.color = 0xfedcba;
 		this.onPress = () => console.log(anchors);
-		this.icon = new PIXI.Text(icon, {fontSize: size});
+		this.icon = new PIXI.Text({text: icon, style: {fontSize: size}});
 		this.icon.x = this.x + (size*this.direction.x - this.icon.width)/2;
 		this.icon.y = this.y + (size*this.direction.y - this.icon.height)/2;
 		app.stage.addChild(this.icon);
@@ -105,8 +109,8 @@ class Button extends Node {
 	}
 }
 
-PIXI.settings.ROUND_PIXELS = true;
-const app = new PIXI.Application({background: 0x123456, resizeTo: window, resolution: window.devicePixelRatio, autoDensity: true});
+const app = new PIXI.Application();
+await app.init({background: 0x123456, resizeTo: window, resolution: window.devicePixelRatio, autoDensity: true});
 const graphics = new PIXI.Graphics();
 app.stage.addChild(graphics);
 app.stage.eventMode = "static";
@@ -115,7 +119,8 @@ app.stage.interactiveChildren = false;
 app.stage.on("pointerdown", onClick);
 app.stage.on("pointermove", onMove);
 app.stage.on("pointerup", onLift);
-app.renderer.on("resize", onWindowResize)
+app.renderer.on("resize", onWindowResize);
+app.renderer.roundPixels = true;
 app.ticker.add(draw);
 window.setInterval(() => console.log("FPS:", app.ticker.FPS), 1000);
 
@@ -129,12 +134,11 @@ function onClick(event) {
 	for (const node of nodes) if (node.hitbox.contains(event.global.x, event.global.y)) {
 		drag = node;
 		if (drag instanceof Button) drag.drawProcs.push(() => {
-			graphics.beginFill(drag.color - 0x444444);
-			graphics.drawRect(
+			graphics.rect(
 				drag.x - drag.size/2 + drag.size/2 * drag.direction.x,
 				drag.y - drag.size/2 + drag.size/2 * drag.direction.y,
 				drag.size, drag.size);
-			graphics.endFill();
+			graphics.fill(drag.color - 0x444444);
 		});
 		return;
 	}
@@ -161,7 +165,7 @@ function onWindowResize(width, height) {
 	oldWindowSize = {x: width, y: height};
 }
 
-const DEBUG = false;
+const DEBUG = true;
 const courses = [
 	new Course(-100, -100, 150),
 	new Course(100, 50, 150)];
@@ -175,16 +179,16 @@ const nodes = courses.concat(buttons);
 nodes[0].connections.push(nodes[1]);
 var drag = false;
 var oldWindowSize = {x: app.screen.width, y: app.screen.height};
-document.body.appendChild(app.view);
+document.body.appendChild(app.canvas);
 
-if (DEBUG) this.drawProcs.push(() => {
-	graphics.beginFill(this.color+100);
-	graphics.drawCircle(
-		this.x,
-		this.y,
-		this.size/8);
-	graphics.endFill();
-})
+if (DEBUG) for (const node of nodes) node.drawProcs.push(() => {
+	graphics.circle(
+		node.x,
+		node.y,
+		node.size/8);
+	graphics.fill(node.color+100);
+});
 
+})();
 '></body>
 </html>
